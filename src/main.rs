@@ -3,7 +3,7 @@ use iced::widget::{button, column, row, text, Button, Column};
 use iced::{Alignment, Element, Renderer, Sandbox, Settings};
 use std::time::Instant;
 
-const SMALLSIZE: usize = 3;
+const SMALLSIZE: usize = 2;
 const SIZE: usize = SMALLSIZE * SMALLSIZE;
 const BUTTONSIZE: f32 = 100.0;
 
@@ -17,16 +17,39 @@ struct FieldCoords {
     x: usize,
 }
 
+type Options = [bool; SIZE];
+
+#[derive(Debug, Clone, Copy)]
+enum OptionCoords {
+    None,
+    One { coords: FieldCoords },
+    TooMany,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Update {
+    coords: FieldCoords,
+    number: u8,
+}
+
+impl Default for OptionCoords {
+    fn default() -> Self {
+        OptionCoords::None
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Field {
-    Number { number: i8, auto: bool },
-    Empty { options: [bool; SIZE] },
+    Number { number: u8, auto: bool },
+    Empty { options: Options },
     Invalid,
 }
 
 impl Default for Field {
     fn default() -> Self {
-        Field::Empty { options: [true; SIZE] }
+        Field::Empty {
+            options: [true; SIZE],
+        }
     }
 }
 
@@ -137,6 +160,7 @@ impl Sandbox for Sudoku {
 impl Sudoku {
     fn update_options(&mut self) {
         let before = Instant::now();
+
         for x in 0..SIZE {
             for y in 0..SIZE {
                 match self.field[y][x] {
@@ -148,71 +172,198 @@ impl Sudoku {
 
         let mut updated = true;
         while updated {
-            updated = false;
+            updated = self.reduce_fieldwise();
+            if !updated {
+                updated = self.reduce_numberwise();
+            }
+        }
 
-            for x in 0..SIZE {
-                for y in 0..SIZE {
-                    match self.field[y][x] {
-                        Field::Empty { .. } => {
-                            let mut options = [true; SIZE];
-                            for i in 0..SIZE {
-                                match self.field[y][i] {
-                                    Field::Number { number, .. } => {
-                                        options[(number - 1) as usize] = false;
-                                    }
-                                    _ => (),
-                                }
-                                match self.field[i][x] {
-                                    Field::Number { number, .. } => {
-                                        options[(number - 1) as usize] = false;
-                                    }
-                                    _ => (),
-                                }
-                            }
-                            let x_base = x - x % SMALLSIZE;
-                            let y_base = y - y % SMALLSIZE;
-                            for i in 0..SMALLSIZE {
-                                for j in 0..SMALLSIZE {
-                                    match self.field[y_base + i][x_base + j] {
-                                        Field::Number { number, .. } => {
-                                            options[(number - 1) as usize] = false;
-                                        }
-                                        _ => (),
-                                    }
-                                }
-                            }
+        println!("Update took:  {:.2?}", before.elapsed());
+    }
 
-                            let mut number = None;
-                            let mut solved = true;
-                            for i in 0..SIZE {
-                                if options[i] {
-                                    match number {
-                                        Some(_) => {
-                                            solved = false;
-                                        }
-                                        None => number = Some((i + 1) as i8),
-                                    }
+    fn reduce_fieldwise(&mut self) -> bool {
+        let mut updated: bool = false;
+        for x in 0..SIZE {
+            for y in 0..SIZE {
+                match self.field[y][x] {
+                    Field::Empty { .. } => {
+                        let mut options = [true; SIZE];
+                        for i in 0..SIZE {
+                            match self.field[y][i] {
+                                Field::Number { number, .. } => {
+                                    options[(number - 1) as usize] = false;
                                 }
+                                _ => (),
                             }
-                            if solved {
-                                match number {
-                                    Some(number) => {
-                                        self.field[y][x] = Field::Number { number, auto: true };
-                                        updated = true;
-                                    }
-                                    None => self.field[y][x] = Field::Invalid,
+                            match self.field[i][x] {
+                                Field::Number { number, .. } => {
+                                    options[(number - 1) as usize] = false;
                                 }
-                            } else {
-                                self.field[y][x] = Field::Empty { options }
+                                _ => (),
                             }
                         }
-                        _ => (),
+                        let x_base = x - x % SMALLSIZE;
+                        let y_base = y - y % SMALLSIZE;
+                        for i in 0..SMALLSIZE {
+                            for j in 0..SMALLSIZE {
+                                match self.field[y_base + i][x_base + j] {
+                                    Field::Number { number, .. } => {
+                                        options[(number - 1) as usize] = false;
+                                    }
+                                    _ => (),
+                                }
+                            }
+                        }
+
+                        let mut number = None;
+                        let mut solved = true;
+                        for i in 0..SIZE {
+                            if options[i] {
+                                match number {
+                                    Some(_) => {
+                                        solved = false;
+                                    }
+                                    None => number = Some((i + 1) as u8),
+                                }
+                            }
+                        }
+                        if solved {
+                            match number {
+                                Some(number) => {
+                                    self.field[y][x] = Field::Number { number, auto: true };
+                                    updated = true;
+                                }
+                                None => self.field[y][x] = Field::Invalid,
+                            }
+                        } else {
+                            self.field[y][x] = Field::Empty { options }
+                        }
                     }
+                    _ => (),
+                }
+            }
+        }
+        return updated;
+    }
+
+    fn reduce_numberwise(&mut self) -> bool {
+        let mut updates: Vec<Update> = vec![];
+        for x in 0..SIZE {
+            let mut optioncoords: [OptionCoords; SIZE] = [OptionCoords::default(); SIZE];
+            for y in 0..SIZE {
+                match self.field[y][x] {
+                    Field::Empty { options } => {
+                        for i in 0..SIZE {
+                            if options[i] {
+                                match optioncoords[i] {
+                                    OptionCoords::None => {
+                                        optioncoords[i] = OptionCoords::One {
+                                            coords: FieldCoords { y, x },
+                                        }
+                                    }
+                                    OptionCoords::One { .. } => {
+                                        optioncoords[i] = OptionCoords::TooMany
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for i in 0..SIZE {
+                match optioncoords[i] {
+                    OptionCoords::One { coords } => {
+                        updates.push(Update { coords, number: (i+1) as u8 })
+                    }
+                    _ => {}
                 }
             }
         }
 
-    println!("Update took:  {:.2?}", before.elapsed());
+        for y in 0..SIZE {
+            let mut optioncoords: [OptionCoords; SIZE] = [OptionCoords::default(); SIZE];
+            for x in 0..SIZE {
+                match self.field[y][x] {
+                    Field::Empty { options } => {
+                        for i in 0..SIZE {
+                            if options[i] {
+                                match optioncoords[i] {
+                                    OptionCoords::None => {
+                                        optioncoords[i] = OptionCoords::One {
+                                            coords: FieldCoords { y, x },
+                                        }
+                                    }
+                                    OptionCoords::One { .. } => {
+                                        optioncoords[i] = OptionCoords::TooMany
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for i in 0..SIZE {
+                match optioncoords[i] {
+                    OptionCoords::One { coords } => {
+                        updates.push(Update { coords, number: (i+1) as u8 })
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        for x in 0..SMALLSIZE {
+            for y in 0..SMALLSIZE {
+                let mut optioncoords: [OptionCoords; SIZE] = [OptionCoords::default(); SIZE];
+                for j in 0..SMALLSIZE {
+                    for k in 0..SMALLSIZE {
+                        let xcoord = SMALLSIZE * x + k;
+                        let ycoord = SMALLSIZE * y + j;
+                        match self.field[ycoord][xcoord] {
+                            Field::Empty { options } => {
+                                for i in 0..SIZE {
+                                    if options[i] {
+                                        match optioncoords[i] {
+                                            OptionCoords::None => {
+                                                optioncoords[i] = OptionCoords::One {
+                                                    coords: FieldCoords {
+                                                        y: ycoord,
+                                                        x: xcoord,
+                                                    },
+                                                }
+                                            }
+                                            OptionCoords::One { .. } => {
+                                                optioncoords[i] = OptionCoords::TooMany
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                for i in 0..SIZE {
+                    match optioncoords[i] {
+                        OptionCoords::One { coords} => {
+                            updates.push(Update { coords, number: (i+1) as u8 })
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        for update in &updates {
+            let x = update.coords.x;
+            let y = update.coords.y;
+            self.field[y][x] = Field::Number { number: update.number, auto: true };
+        }
+        return updates.len() != 0;
     }
 
     fn view_field(&self) -> Column<'_, Message, Renderer> {
@@ -233,7 +384,8 @@ impl Sudoku {
         for y in 0..SMALLSIZE {
             let mut rows = row!();
             for x in 0..SMALLSIZE {
-                rows = rows.push(self.view_number(SMALLSIZE * group_x + x, SMALLSIZE * group_y + y));
+                rows =
+                    rows.push(self.view_number(SMALLSIZE * group_x + x, SMALLSIZE * group_y + y));
             }
             columns = columns.push(rows);
         }
@@ -284,12 +436,16 @@ impl Sudoku {
                 .horizontal_alignment(Horizontal::Center);
 
             let b = button(t)
-                .on_press(Message::FieldUpdated {
-                    coords: coords,
-                    number: Field::Number {
-                        number: (n + 1) as i8,
-                        auto: false,
-                    },
+                .on_press(if options[n] {
+                    Message::FieldUpdated {
+                        coords,
+                        number: Field::Number {
+                            number: (n + 1) as u8,
+                            auto: false,
+                        },
+                    }
+                } else {
+                    Message::None
                 })
                 .width((BUTTONSIZE - 8.0) / (SMALLSIZE as f32))
                 .height((BUTTONSIZE - 8.0) / (SMALLSIZE as f32))
