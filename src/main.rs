@@ -1,6 +1,11 @@
 use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{button, column, row, text, Button, Column};
 use iced::{Alignment, Element, Renderer, Sandbox, Settings};
+use std::time::Instant;
+
+const SMALLSIZE: usize = 3;
+const SIZE: usize = SMALLSIZE * SMALLSIZE;
+const BUTTONSIZE: f32 = 100.0;
 
 fn main() -> iced::Result {
     Sudoku::run(Settings::default())
@@ -15,18 +20,18 @@ struct FieldCoords {
 #[derive(Debug, Clone, Copy)]
 enum Field {
     Number { number: i8, auto: bool },
-    Empty { options: [bool; 9] },
+    Empty { options: [bool; SIZE] },
     Invalid,
 }
 
 impl Default for Field {
     fn default() -> Self {
-        Field::Empty { options: [true; 9] }
+        Field::Empty { options: [true; SIZE] }
     }
 }
 
 struct Sudoku {
-    field: [[Field; 9]; 9],
+    field: [[Field; SIZE]; SIZE],
 }
 
 enum ButtonStyle {
@@ -91,7 +96,7 @@ impl Sandbox for Sudoku {
 
     fn new() -> Self {
         let a = Sudoku {
-            field: [[Field::default(); 9]; 9],
+            field: [[Field::default(); SIZE]; SIZE],
         };
 
         return a;
@@ -131,8 +136,9 @@ impl Sandbox for Sudoku {
 
 impl Sudoku {
     fn update_options(&mut self) {
-        for x in 0..9 {
-            for y in 0..9 {
+        let before = Instant::now();
+        for x in 0..SIZE {
+            for y in 0..SIZE {
                 match self.field[y][x] {
                     Field::Number { auto: false, .. } => (),
                     _ => self.field[y][x] = Field::default(),
@@ -144,12 +150,12 @@ impl Sudoku {
         while updated {
             updated = false;
 
-            for x in 0..9 {
-                for y in 0..9 {
+            for x in 0..SIZE {
+                for y in 0..SIZE {
                     match self.field[y][x] {
                         Field::Empty { .. } => {
-                            let mut options = [true; 9];
-                            for i in 0..9 {
+                            let mut options = [true; SIZE];
+                            for i in 0..SIZE {
                                 match self.field[y][i] {
                                     Field::Number { number, .. } => {
                                         options[(number - 1) as usize] = false;
@@ -163,10 +169,10 @@ impl Sudoku {
                                     _ => (),
                                 }
                             }
-                            let x_base = x - x % 3;
-                            let y_base = y - y % 3;
-                            for i in 0..3 {
-                                for j in 0..3 {
+                            let x_base = x - x % SMALLSIZE;
+                            let y_base = y - y % SMALLSIZE;
+                            for i in 0..SMALLSIZE {
+                                for j in 0..SMALLSIZE {
                                     match self.field[y_base + i][x_base + j] {
                                         Field::Number { number, .. } => {
                                             options[(number - 1) as usize] = false;
@@ -178,7 +184,7 @@ impl Sudoku {
 
                             let mut number = None;
                             let mut solved = true;
-                            for i in 0..9 {
+                            for i in 0..SIZE {
                                 if options[i] {
                                     match number {
                                         Some(_) => {
@@ -205,14 +211,16 @@ impl Sudoku {
                 }
             }
         }
+
+    println!("Update took:  {:.2?}", before.elapsed());
     }
 
     fn view_field(&self) -> Column<'_, Message, Renderer> {
         let mut columns = column!();
 
-        for y in 0..3 {
+        for y in 0..SMALLSIZE {
             let mut rows = row!();
-            for x in 0..3 {
+            for x in 0..SMALLSIZE {
                 rows = rows.push(self.view_small_square(x, y));
             }
             columns = columns.push(rows);
@@ -222,10 +230,10 @@ impl Sudoku {
 
     fn view_small_square(&self, group_x: usize, group_y: usize) -> Column<'_, Message, Renderer> {
         let mut columns = column!();
-        for y in 0..3 {
+        for y in 0..SMALLSIZE {
             let mut rows = row!();
-            for x in 0..3 {
-                rows = rows.push(self.view_number(3 * group_x + x, 3 * group_y + y));
+            for x in 0..SMALLSIZE {
+                rows = rows.push(self.view_number(SMALLSIZE * group_x + x, SMALLSIZE * group_y + y));
             }
             columns = columns.push(rows);
         }
@@ -236,7 +244,7 @@ impl Sudoku {
         let b = match self.field[y][x] {
             Field::Number { number, auto } => {
                 let t = text(number)
-                    .size(50)
+                    .size(BUTTONSIZE * 2.0 / 3.0)
                     .horizontal_alignment(Horizontal::Center)
                     .vertical_alignment(Vertical::Center);
 
@@ -258,20 +266,20 @@ impl Sudoku {
             _ => Message::None,
         };
 
-        b.on_press(msg).height(75).width(75)
+        b.on_press(msg).height(BUTTONSIZE).width(BUTTONSIZE)
     }
 
     fn view_options(
         &self,
         coords: FieldCoords,
-        options: [bool; 9],
+        options: [bool; SIZE],
     ) -> Button<'_, Message, Renderer> {
         let mut columns = column!().align_items(Alignment::Center);
         let mut rows = row!().align_items(Alignment::Center);
 
-        for n in 0..9 {
+        for n in 0..SIZE {
             let t = if options[n] { text(n + 1) } else { text(" ") }
-                .size(20)
+                .size(BUTTONSIZE / (SMALLSIZE as f32) * 2.0 / 3.0)
                 .vertical_alignment(Vertical::Center)
                 .horizontal_alignment(Horizontal::Center);
 
@@ -283,13 +291,13 @@ impl Sudoku {
                         auto: false,
                     },
                 })
-                .width(21)
-                .height(21)
+                .width((BUTTONSIZE - 8.0) / (SMALLSIZE as f32))
+                .height((BUTTONSIZE - 8.0) / (SMALLSIZE as f32))
                 .padding(0.0)
                 .style(ButtonStyle::Option.into());
             rows = rows.push(b);
 
-            if (n + 1) % 3 == 0 {
+            if (n + 1) % SMALLSIZE == 0 {
                 columns = columns.push(rows);
                 rows = row!().align_items(Alignment::Center);
             };
