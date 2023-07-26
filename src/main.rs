@@ -19,10 +19,13 @@ struct FieldCoords {
 
 type Options = [bool; SIZE];
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 enum OptionCoords {
+    #[default]
     None,
-    One { coords: FieldCoords },
+    One {
+        coords: FieldCoords,
+    },
     TooMany,
 }
 
@@ -30,12 +33,6 @@ enum OptionCoords {
 struct Update {
     coords: FieldCoords,
     number: u8,
-}
-
-impl Default for OptionCoords {
-    fn default() -> Self {
-        OptionCoords::None
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -118,11 +115,9 @@ impl Sandbox for Sudoku {
     type Message = Message;
 
     fn new() -> Self {
-        let a = Sudoku {
+        Sudoku {
             field: [[Field::default(); SIZE]; SIZE],
-        };
-
-        return a;
+        }
     }
 
     fn title(&self) -> String {
@@ -131,14 +126,14 @@ impl Sandbox for Sudoku {
         for x in 0..SIZE {
             for y in 0..SIZE {
                 match self.field[y][x] {
-                    Field::Number { auto: false, ..} => {entered += 1},
-                    Field::Number { auto: true, ..} => {auto += 1},
+                    Field::Number { auto: false, .. } => entered += 1,
+                    Field::Number { auto: true, .. } => auto += 1,
                     _ => (),
                 }
             }
-        };
+        }
         let solve = auto as f32 / ((SIZE * SIZE - entered) as f32);
-        format!("Sudoku {:.1}% Solved", 100.0*solve)
+        format!("Sudoku {:.1}% Solved", 100.0 * solve)
     }
 
     fn update(&mut self, message: Message) {
@@ -183,10 +178,8 @@ impl Sudoku {
         }
 
         loop {
-            if !self.reduce_fieldwise() {
-                if !self.reduce_numberwise() {
-                    break;
-                }
+            if !self.reduce_fieldwise() && !self.reduce_numberwise() {
+                break;
             }
         }
 
@@ -197,65 +190,55 @@ impl Sudoku {
         let mut updated: bool = false;
         for x in 0..SIZE {
             for y in 0..SIZE {
-                match self.field[y][x] {
-                    Field::Empty { .. } => {
-                        let mut options = [true; SIZE];
-                        for i in 0..SIZE {
-                            match self.field[y][i] {
-                                Field::Number { number, .. } => {
-                                    options[(number - 1) as usize] = false;
-                                }
-                                _ => (),
-                            }
-                            match self.field[i][x] {
-                                Field::Number { number, .. } => {
-                                    options[(number - 1) as usize] = false;
-                                }
-                                _ => (),
-                            }
+                if let Field::Empty { options: _ } = self.field[y][x] {
+                    let mut options = [true; SIZE];
+                    for i in 0..SIZE {
+                        if let Field::Number { number, auto: _ } = self.field[y][i] {
+                            options[(number - 1) as usize] = false;
                         }
-                        let x_base = x - x % SMALLSIZE;
-                        let y_base = y - y % SMALLSIZE;
-                        for i in 0..SMALLSIZE {
-                            for j in 0..SMALLSIZE {
-                                match self.field[y_base + i][x_base + j] {
-                                    Field::Number { number, .. } => {
-                                        options[(number - 1) as usize] = false;
-                                    }
-                                    _ => (),
-                                }
-                            }
-                        }
-
-                        let mut number = None;
-                        let mut solved = true;
-                        for i in 0..SIZE {
-                            if options[i] {
-                                match number {
-                                    Some(_) => {
-                                        solved = false;
-                                    }
-                                    None => number = Some((i + 1) as u8),
-                                }
-                            }
-                        }
-                        if solved {
-                            match number {
-                                Some(number) => {
-                                    self.field[y][x] = Field::Number { number, auto: true };
-                                    updated = true;
-                                }
-                                None => self.field[y][x] = Field::Invalid,
-                            }
-                        } else {
-                            self.field[y][x] = Field::Empty { options }
+                        if let Field::Number { number, auto: _ } = self.field[i][x] {
+                            options[(number - 1) as usize] = false;
                         }
                     }
-                    _ => (),
+                    let x_base = x - x % SMALLSIZE;
+                    let y_base = y - y % SMALLSIZE;
+                    for i in 0..SMALLSIZE {
+                        for j in 0..SMALLSIZE {
+                            if let Field::Number { number, auto: _ } =
+                                self.field[y_base + i][x_base + j]
+                            {
+                                options[(number - 1) as usize] = false;
+                            }
+                        }
+                    }
+
+                    let mut number = None;
+                    let mut solved = true;
+                    for (i, option) in options.iter().enumerate().take(SIZE) {
+                        if *option {
+                            match number {
+                                Some(_) => {
+                                    solved = false;
+                                }
+                                None => number = Some((i + 1) as u8),
+                            }
+                        }
+                    }
+                    if solved {
+                        match number {
+                            Some(number) => {
+                                self.field[y][x] = Field::Number { number, auto: true };
+                                updated = true;
+                            }
+                            None => self.field[y][x] = Field::Invalid,
+                        }
+                    } else {
+                        self.field[y][x] = Field::Empty { options }
+                    }
                 }
             }
         }
-        return updated;
+        updated
     }
 
     fn reduce_numberwise(&mut self) -> bool {
@@ -263,33 +246,28 @@ impl Sudoku {
         for x in 0..SIZE {
             let mut optioncoords: [OptionCoords; SIZE] = [OptionCoords::default(); SIZE];
             for y in 0..SIZE {
-                match self.field[y][x] {
-                    Field::Empty { options } => {
-                        for i in 0..SIZE {
-                            if options[i] {
-                                match optioncoords[i] {
-                                    OptionCoords::None => {
-                                        optioncoords[i] = OptionCoords::One {
-                                            coords: FieldCoords { y, x },
-                                        }
+                if let Field::Empty { options } = self.field[y][x] {
+                    for i in 0..SIZE {
+                        if options[i] {
+                            match optioncoords[i] {
+                                OptionCoords::None => {
+                                    optioncoords[i] = OptionCoords::One {
+                                        coords: FieldCoords { y, x },
                                     }
-                                    OptionCoords::One { .. } => {
-                                        optioncoords[i] = OptionCoords::TooMany
-                                    }
-                                    _ => {}
                                 }
+                                OptionCoords::One { .. } => optioncoords[i] = OptionCoords::TooMany,
+                                _ => {}
                             }
                         }
                     }
-                    _ => {}
                 }
             }
-            for i in 0..SIZE {
-                match optioncoords[i] {
-                    OptionCoords::One { coords } => {
-                        updates.push(Update { coords, number: (i+1) as u8 })
-                    }
-                    _ => {}
+            for (i, optioncoord) in optioncoords.iter().enumerate().take(SIZE) {
+                if let OptionCoords::One { coords } = *optioncoord {
+                    updates.push(Update {
+                        coords,
+                        number: (i + 1) as u8,
+                    })
                 }
             }
         }
@@ -297,33 +275,28 @@ impl Sudoku {
         for y in 0..SIZE {
             let mut optioncoords: [OptionCoords; SIZE] = [OptionCoords::default(); SIZE];
             for x in 0..SIZE {
-                match self.field[y][x] {
-                    Field::Empty { options } => {
-                        for i in 0..SIZE {
-                            if options[i] {
-                                match optioncoords[i] {
-                                    OptionCoords::None => {
-                                        optioncoords[i] = OptionCoords::One {
-                                            coords: FieldCoords { y, x },
-                                        }
+                if let Field::Empty { options } = self.field[y][x] {
+                    for i in 0..SIZE {
+                        if options[i] {
+                            match optioncoords[i] {
+                                OptionCoords::None => {
+                                    optioncoords[i] = OptionCoords::One {
+                                        coords: FieldCoords { y, x },
                                     }
-                                    OptionCoords::One { .. } => {
-                                        optioncoords[i] = OptionCoords::TooMany
-                                    }
-                                    _ => {}
                                 }
+                                OptionCoords::One { .. } => optioncoords[i] = OptionCoords::TooMany,
+                                _ => {}
                             }
                         }
                     }
-                    _ => {}
                 }
             }
-            for i in 0..SIZE {
-                match optioncoords[i] {
-                    OptionCoords::One { coords } => {
-                        updates.push(Update { coords, number: (i+1) as u8 })
-                    }
-                    _ => {}
+            for (i, optioncoord) in optioncoords.iter().enumerate().take(SIZE) {
+                if let OptionCoords::One { coords } = *optioncoord {
+                    updates.push(Update {
+                        coords,
+                        number: (i + 1) as u8,
+                    })
                 }
             }
         }
@@ -335,37 +308,34 @@ impl Sudoku {
                     for k in 0..SMALLSIZE {
                         let xcoord = SMALLSIZE * x + k;
                         let ycoord = SMALLSIZE * y + j;
-                        match self.field[ycoord][xcoord] {
-                            Field::Empty { options } => {
-                                for i in 0..SIZE {
-                                    if options[i] {
-                                        match optioncoords[i] {
-                                            OptionCoords::None => {
-                                                optioncoords[i] = OptionCoords::One {
-                                                    coords: FieldCoords {
-                                                        y: ycoord,
-                                                        x: xcoord,
-                                                    },
-                                                }
+                        if let Field::Empty { options } = self.field[ycoord][xcoord] {
+                            for i in 0..SIZE {
+                                if options[i] {
+                                    match optioncoords[i] {
+                                        OptionCoords::None => {
+                                            optioncoords[i] = OptionCoords::One {
+                                                coords: FieldCoords {
+                                                    y: ycoord,
+                                                    x: xcoord,
+                                                },
                                             }
-                                            OptionCoords::One { .. } => {
-                                                optioncoords[i] = OptionCoords::TooMany
-                                            }
-                                            _ => {}
                                         }
+                                        OptionCoords::One { .. } => {
+                                            optioncoords[i] = OptionCoords::TooMany
+                                        }
+                                        _ => {}
                                     }
                                 }
                             }
-                            _ => {}
                         }
                     }
                 }
-                for i in 0..SIZE {
-                    match optioncoords[i] {
-                        OptionCoords::One { coords} => {
-                            updates.push(Update { coords, number: (i+1) as u8 })
-                        }
-                        _ => {}
+                for (i, optioncoord) in optioncoords.iter().enumerate().take(SIZE) {
+                    if let OptionCoords::One { coords } = *optioncoord {
+                        updates.push(Update {
+                            coords,
+                            number: (i + 1) as u8,
+                        })
                     }
                 }
             }
@@ -373,9 +343,12 @@ impl Sudoku {
         for update in &updates {
             let x = update.coords.x;
             let y = update.coords.y;
-            self.field[y][x] = Field::Number { number: update.number, auto: true };
+            self.field[y][x] = Field::Number {
+                number: update.number,
+                auto: true,
+            };
         }
-        return updates.len() != 0;
+        !updates.is_empty()
     }
 
     fn view_field(&self) -> Column<'_, Message, Renderer> {
@@ -441,14 +414,14 @@ impl Sudoku {
         let mut columns = column!().align_items(Alignment::Center);
         let mut rows = row!().align_items(Alignment::Center);
 
-        for n in 0..SIZE {
-            let t = if options[n] { text(n + 1) } else { text(" ") }
+        for (n, option) in options.iter().enumerate().take(SIZE) {
+            let t = if *option { text(n + 1) } else { text(" ") }
                 .size(BUTTONSIZE / (SMALLSIZE as f32) * 2.0 / 3.0)
                 .vertical_alignment(Vertical::Center)
                 .horizontal_alignment(Horizontal::Center);
 
             let b = button(t)
-                .on_press(if options[n] {
+                .on_press(if *option {
                     Message::FieldUpdated {
                         coords,
                         number: Field::Number {
