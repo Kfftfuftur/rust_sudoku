@@ -3,7 +3,7 @@ use iced::widget::{button, column, row, text, Button, Column};
 use iced::{Alignment, Element, Renderer, Sandbox, Settings};
 use std::time::Instant;
 
-const SMALLSIZE: usize = 2;
+const SMALLSIZE: usize = 3;
 const SIZE: usize = SMALLSIZE * SMALLSIZE;
 const BUTTONSIZE: f32 = 100.0;
 
@@ -126,7 +126,19 @@ impl Sandbox for Sudoku {
     }
 
     fn title(&self) -> String {
-        String::from("Sudoku")
+        let mut auto = 0;
+        let mut entered = 0;
+        for x in 0..SIZE {
+            for y in 0..SIZE {
+                match self.field[y][x] {
+                    Field::Number { auto: false, ..} => {entered += 1},
+                    Field::Number { auto: true, ..} => {auto += 1},
+                    _ => (),
+                }
+            }
+        };
+        let solve = auto as f32 / ((SIZE * SIZE - entered) as f32);
+        format!("Sudoku {:.1}% Solved", 100.0*solve)
     }
 
     fn update(&mut self, message: Message) {
