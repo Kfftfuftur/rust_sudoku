@@ -1,5 +1,5 @@
-[profile.release]
-rustflags = ["-C","target-cpu=native","-C" "strip=symbols"]
+[profile-rustflags.release]
+rustflags = ["-C","target-cpu=native","-C" , "strip=symbols"]
 opt-level = 'z'     # Optimize for size
 lto = true          # Enable link-time optimization
 codegen-units = 1   # Reduce number of codegen units to increase optimizations
