@@ -182,11 +182,11 @@ impl Sudoku {
             }
         }
 
-        let mut updated = true;
-        while updated {
-            updated = self.reduce_fieldwise();
-            if !updated {
-                updated = self.reduce_numberwise();
+        loop {
+            if !self.reduce_fieldwise() {
+                if !self.reduce_numberwise() {
+                    break;
+                }
             }
         }
 
